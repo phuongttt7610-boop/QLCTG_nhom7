@@ -48,6 +48,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from statsmodels.graphics.tsaplots import plot_acf
+from statsmodels.tsa.stattools import acf
 from statsmodels.stats.diagnostic import acorr_ljungbox
 
 # -------------------------------------------------------------------------------
@@ -87,7 +88,9 @@ def step1_load_data(data_path: Path) -> Tuple[pd.Series, pd.Series]:
     df_real = pd.read_csv(data_path)
     df_real["Month"] = pd.to_datetime(df_real["Month"])
     df_real.set_index("Month", inplace=True)
-    real_series = df_real["Passengers"].astype(float)
+    real_series = df_real["Passengers"].astype(float).sort_index().asfreq("MS")
+    if real_series.isna().any():
+        raise ValueError("Dữ liệu AirPassengers bị thiếu tháng hoặc có giá trị NaN")
 
     print(f" -> Chuỗi White Noise: {len(wn_series)} điểm (Mean={wn_series.mean():.4f}, Std={wn_series.std():.4f})")
     print(f" -> Chuỗi AirPassengers: {len(real_series)} điểm.")
@@ -104,6 +107,12 @@ def step2_execute_analysis(wn_series: pd.Series, real_series: pd.Series) -> Dict
     print(f"[BƯỚC 2] Thực hiện kiểm định Ljung-Box Test tại lags=[10, 20]...")
     check_lags = [10, 20]
 
+    # Đếm lag 1..30 vượt dải tham chiếu 95% ±1.96/sqrt(N), không tính lag 0.
+    threshold = 1.96 / np.sqrt(len(wn_series))
+    acf_wn = acf(wn_series, nlags=CONFIG["lags"], fft=True)
+    outside_lags = np.flatnonzero(np.abs(acf_wn[1:]) > threshold).tolist()
+    outside_lags = [lag + 1 for lag in outside_lags]
+
     # Kiểm định cho White Noise
     lb_wn = acorr_ljungbox(wn_series, lags=check_lags, return_df=True)
 
@@ -112,6 +121,9 @@ def step2_execute_analysis(wn_series: pd.Series, real_series: pd.Series) -> Dict
 
     results = {
         "lb_wn": lb_wn,
+        "acf_wn": acf_wn,
+        "threshold": float(threshold),
+        "outside_lags": outside_lags,
         "lb_real": lb_real,
         "wn_pvalue_lag10": lb_wn.loc[10, "lb_pvalue"],
         "wn_pvalue_lag20": lb_wn.loc[20, "lb_pvalue"],
@@ -119,6 +131,7 @@ def step2_execute_analysis(wn_series: pd.Series, real_series: pd.Series) -> Dict
         "real_pvalue_lag20": lb_real.loc[20, "lb_pvalue"]
     }
 
+    print(f" -> ACF: {len(outside_lags)}/{CONFIG['lags']} lag vượt ±{threshold:.4f}: {outside_lags}")
     print(" -> Kết quả Ljung-Box: Chuỗi White Noise:")
     print(lb_wn[["lb_stat", "lb_pvalue"]])
     print(" -> Kết quả Ljung-Box: Chuỗi AirPassengers:")
@@ -145,7 +158,13 @@ def step3_visualize(wn_series: pd.Series, real_series: pd.Series, analysis_resul
     axes[0, 0].set_ylabel("Giá trị")
     axes[0, 0].grid(True, linestyle="--", alpha=0.5)
 
-    plot_acf(wn_series, lags=CONFIG["lags"], ax=axes[0, 1], color="seagreen", title="ACF của White Noise (Toàn bộ trong dải 95%)")
+    # Dùng cùng ngưỡng với phép đếm lag để đồ thị và báo cáo nhất quán.
+    plot_acf(wn_series, lags=CONFIG["lags"], alpha=None, ax=axes[0, 1], color="seagreen",
+             title=f"ACF White Noise ({len(analysis_results['outside_lags'])} lag vượt dải 95%)")
+    ci = analysis_results["threshold"]
+    axes[0, 1].axhspan(-ci, ci, color="seagreen", alpha=0.15, label="Dải tham chiếu 95%")
+    axes[0, 1].axhline(ci, color="seagreen", linestyle="--", linewidth=0.9)
+    axes[0, 1].axhline(-ci, color="seagreen", linestyle="--", linewidth=0.9)
     axes[0, 1].grid(True, linestyle="--", alpha=0.5)
 
     # Hàng 2: Chuỗi thực tế
@@ -175,23 +194,15 @@ def step4_conclude_and_report(analysis_results: Dict[str, Any]) -> str:
     Xuất đoạn văn so sánh 5 dòng và kết luận tính khả thi dự báo.
     """
     print("\n[BƯỚC 4] TỔNG HỢP KẾT QUẢ VÀ BÁO CÁO ĐOẠN VĂN SO SÁNH 5 DÒNG:")
-    report_text = f"""
-=================================================================================
-BÁO CÁO PHÂN TÍCH KẾT QUẢ BÀI TẬP 2 (KIỂM TRA WHITE NOISE)
-=================================================================================
-ĐOẠN VĂN NHẬN XÉT SO SÁNH (5 DÒNG THEO YÊU CẦU ĐỀ BÀI):
-1. Biểu đồ ACF của chuỗi White Noise có gần như toàn bộ các hệ số độ trễ (lags 1-30) nằm hoàn toàn
-   bên trong dải tin cậy 95%, chứng minh các điểm dữ liệu hoàn toàn độc lập và không có tương quan.
-2. Ngược lại, biểu đồ ACF của chuỗi AirPassengers hiển thị các hệ số tự tương quan rất cao, suy giảm chậm
-   và lặp lại các đỉnh chu kỳ tại lag 12, phản ánh rõ rệt cấu trúc xu hướng và tính mùa vụ.
-3. Kết quả kiểm định Ljung-Box trên chuỗi White Noise có p-value lớn hơn 0.05 (p={analysis_results['wn_pvalue_lag10']:.4f}),
-   chấp nhận giả thuyết H0 rằng chuỗi này là nhiễu thuần túy và không có cấu trúc tự hồi quy.
-4. Đối với chuỗi AirPassengers, kiểm định Ljung-Box cho p-value xấp xỉ bằng 0 (p={analysis_results['real_pvalue_lag10']:.4e} < 0.05),
-   bác bỏ H0 và khẳng định chuỗi chứa lượng thông tin nội tại dồi dào.
-5. Do đó, chuỗi White Noise hoàn toàn KHÔNG THỂ dự báo được (dự báo tốt nhất chỉ là kỳ vọng mu=0),
-   trong khi chuỗi AirPassengers chứa tín hiệu quy luật mạnh mẽ và rất lý tưởng để xây dựng mô hình dự báo.
-=================================================================================
-"""
+    # Đoạn nhận xét chính giữ đúng 5 ý; câu hỏi và bảng số liệu nằm ở mục riêng.
+    lag_list = ", ".join(map(str, analysis_results["outside_lags"])) or "không có"
+    p10_wn = float(analysis_results["wn_pvalue_lag10"])
+    p20_wn = float(analysis_results["wn_pvalue_lag20"])
+    p10_air = float(analysis_results["real_pvalue_lag10"])
+    p20_air = float(analysis_results["real_pvalue_lag20"])
+    count = len(analysis_results["outside_lags"])
+    report_text = f"""=================================================================================
+
     print(report_text)
 
     report_file = BASE_DIR / "ket_qua_bai_2.txt"
