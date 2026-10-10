@@ -3,7 +3,7 @@
 DỰ ÁN: QUẢN LÝ & KHAI PHÁ CHUỖI THỜI GIAN (QLCTG) - LAB 2
 BÀI TẬP 2: KIỂM ĐỊNH CHUỖI NHIỄU TRẮNG (WHITE NOISE TESTING)
 ---------------------------------------------------------------------------------
-Thành viên phụ trách: Thành viên 2
+Thành viên phụ trách: Thanh Phuong
 Thư mục: LAB2/bai_tap_2/
 Tệp thực thi: bai_tap_2.py
 Dataset so sánh: LAB2/data/raw/AirPassengers.csv
