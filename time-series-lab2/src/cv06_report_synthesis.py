@@ -14,7 +14,7 @@ NHIỆM VỤ CV06: TỔNG HỢP PIPELINE, TRẢ LỜI CÂU HỎI LÝ LUẬN & XU
   + Tất cả các bảng chỉ số tại: outputs/tables/*.csv
   + Tất cả các hình ảnh trực quan tại: outputs/figures/*.png
 - Sản phẩm đầu ra:
-  + docs/BAO_CAO_LAB3_NHOM7.md (Báo cáo kỹ thuật toàn diện nộp Giảng viên)
+  + docs/BAO_CAO_LAB2_NHOM7.md (Báo cáo kỹ thuật toàn diện nộp Giảng viên)
   + outputs/tables/final_model_comparison.csv (Bảng so sánh tổng hợp tất cả các kịch bản)
   + outputs/figures/cv06_summary_dashboard.png (Bảng điều khiển tổng hợp kết quả đồ thị)
 
@@ -35,10 +35,7 @@ NHIỆM VỤ CV06: TỔNG HỢP PIPELINE, TRẢ LỜI CÂU HỎI LÝ LUẬN & XU
 3. TỰ ĐỘNG XUẤT BÁO CÁO MARKDOWN ĐẦY ĐỦ ĐỒ THỊ VÀ BẢNG SỐ LIỆU.
 ===================================================================================
 """
-
-
-# -*- coding: utf-8 -*-
-"""CV06 - Audit pipeline, consolidate results and compile Lab 3 report."""
+"""CV06 - Audit pipeline, consolidate results and compile Lab 2 report."""
 
 import sys
 from pathlib import Path
@@ -191,7 +188,27 @@ def step3_create_dashboard(audit):
 def _markdown_table(df):
     if df is None or df.empty:
         return "_Chưa có dữ liệu để trình bày._"
-    return df.head(30).to_markdown(index=False)
+    def _markdown_table(df):
+    if df is None or df.empty:
+        return "_Chưa có dữ liệu để trình bày._"
+
+    df = df.head(30).fillna("")
+    columns = [str(c) for c in df.columns]
+
+    def clean(value):
+        return str(value).replace("|", "\\|").replace("\n", " ")
+
+    rows = [
+        "| " + " | ".join(clean(c) for c in columns) + " |",
+        "| " + " | ".join("---" for _ in columns) + " |",
+    ]
+
+    for _, row in df.iterrows():
+        rows.append(
+            "| " + " | ".join(clean(v) for v in row.tolist()) + " |"
+        )
+
+    return "\n".join(rows)
 
 
 def step4_compile_report(audit, final_df):
